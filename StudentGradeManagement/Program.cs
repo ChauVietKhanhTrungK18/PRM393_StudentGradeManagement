@@ -1,6 +1,7 @@
 using BusinessLayer.IService;
 using BusinessLayer.Services;
 using DataAccessLayer.DbContexts;
+using DataAccessLayer.FileHandlers.Excel;
 using DataAccessLayer.FileHandlers.FG;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
@@ -60,8 +61,11 @@ builder.Services.AddSwaggerGen(option =>
     });
 });
 builder.Services.AddScoped<BusinessLayer.Mapping.FGMapper>();
+builder.Services.AddScoped<BusinessLayer.Mapping.ExcelMapper>();
 builder.Services.AddScoped<IFGImportService,FGImportService>();
+builder.Services.AddScoped<IExcelImportService, ExcelImportService>();
 builder.Services.AddScoped<IFGReader, FGReader>();
+builder.Services.AddScoped<IExcelReader, ExcelReader>();
 var app = builder.Build();
 
 app.UseCors("AllowAll");
