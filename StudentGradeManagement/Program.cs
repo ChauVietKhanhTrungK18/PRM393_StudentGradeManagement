@@ -62,6 +62,7 @@ builder.Services.AddSwaggerGen(option =>
 builder.Services.AddScoped<BusinessLayer.Mapping.FGMapper>();
 builder.Services.AddScoped<IFGImportService,FGImportService>();
 builder.Services.AddScoped<IFGReader, FGReader>();
+builder.Services.AddScoped<ISubjectService, SubjectService>();
 var app = builder.Build();
 
 app.UseCors("AllowAll");

@@ -1,6 +1,13 @@
 @StudentGradeManagement_HostAddress = http://localhost:5062
 
-GET {{StudentGradeManagement_HostAddress}}/weatherforecast/
+### Lấy danh sách tất cả môn/lớp
+GET {{StudentGradeManagement_HostAddress}}/api/subjects
+Accept: application/json
+
+###
+
+### Lấy bảng điểm — thay PRN211 và SE1501 bằng đúng subject/class trong DB
+GET {{StudentGradeManagement_HostAddress}}/api/subjects/PRN211/SE1501
 Accept: application/json
 
 ###
