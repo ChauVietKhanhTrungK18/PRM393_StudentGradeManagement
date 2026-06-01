@@ -32,3 +32,8 @@ msbuild.wrn
 
 # Visual Studio 2015
 .vs/
+
+# SQLite
+*.db
+*.db-wal
+*.db-shm

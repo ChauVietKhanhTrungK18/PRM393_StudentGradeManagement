@@ -1,6 +1,12 @@
+#nullable enable
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 using BusinessLayer.DTOs;
 using BusinessLayer.IService;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using StudentGradeManagement.DTOs;
 using System.Text.Json;
 
@@ -10,22 +16,18 @@ namespace StudentGradeManagement.Controllers
     [Route("api/excel")]
     public class ExcelController : ControllerBase
     {
+        private readonly IExcelService _excelService;
+        private readonly IExcelImportService _importService;
+        private readonly ILogger<ExcelController> _logger;
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
             PropertyNameCaseInsensitive = true
         };
 
-        private readonly IExcelImportService _importService;
-        private readonly ILogger<ExcelController> _logger;
-
-        public ExcelController(
-            IExcelImportService importService,
-            ILogger<ExcelController> logger)
-        {
-            _importService = importService
-                ?? throw new ArgumentNullException(nameof(importService));
-            _logger = logger
-                ?? throw new ArgumentNullException(nameof(logger));
+        public ExcelController(IExcelService excelService, ILogger<ExcelController> logger, IExcelImportService importService){
+            _excelService = excelService ?? throw new ArgumentNullException(nameof(excelService));
+            _importService = importService ?? throw new ArgumentNullException(nameof(importService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <summary>
@@ -94,7 +96,7 @@ namespace StudentGradeManagement.Controllers
             if (!TryParseMapping(request.MappingJson, out var mapping, out var parseError))
             {
                 return BadRequest(new ExcelPreviewResponseDto
-                {
+        {
                     Success = false,
                     Message = parseError
                 });
@@ -299,6 +301,32 @@ namespace StudentGradeManagement.Controllers
             if (System.IO.File.Exists(tempFilePath))
             {
                 System.IO.File.Delete(tempFilePath);
+            }
+        }
+        /// <summary>
+        /// Export Excel template with one worksheet per SubjectClass.
+        /// </summary>
+        [HttpGet("template")]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<IActionResult> ExportTemplate(CancellationToken cancellationToken)
+        {
+            try
+            {
+                var fileBytes = await _excelService.ExportTemplateAsync(cancellationToken).ConfigureAwait(false);
+                const string contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+                const string fileName = "GradeTemplate.xlsx";
+                return File(fileBytes, contentType, fileName);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("ExportTemplate cancelled by caller.");
+                return StatusCode(StatusCodes.Status500InternalServerError, "Export cancelled.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to export Excel template.");
+                return StatusCode(StatusCodes.Status500InternalServerError, "Failed to export template.");
             }
         }
     }
