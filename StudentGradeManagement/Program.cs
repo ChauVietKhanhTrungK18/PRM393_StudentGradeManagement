@@ -1,6 +1,7 @@
 using BusinessLayer.IService;
 using BusinessLayer.Services;
 using DataAccessLayer.DbContexts;
+using DataAccessLayer.FileHandlers.Excel;
 using DataAccessLayer.FileHandlers.FG;
 using DataAccessLayer.IRepository;
 using DataAccessLayer.Repository;
@@ -65,12 +66,15 @@ builder.Services.AddSwaggerGen(option =>
 ExcelPackage.License.SetNonCommercialPersonal("StudentGradeManagement");
 
 builder.Services.AddScoped<BusinessLayer.Mapping.FGMapper>();
+builder.Services.AddScoped<BusinessLayer.Mapping.ExcelMapper>();
 builder.Services.AddScoped<IFGImportService,FGImportService>();
+builder.Services.AddScoped<IExcelImportService, ExcelImportService>();
 builder.Services.AddScoped<IFGReader, FGReader>();
 builder.Services.AddScoped<ISubjectService, SubjectService>();
 builder.Services.AddScoped<IExcelService, ExcelService>();
 builder.Services.AddScoped<IExcelRepository,ExcelRepository>();
 
+builder.Services.AddScoped<IExcelReader, ExcelReader>();
 var app = builder.Build();
 
 app.UseCors("AllowAll");
