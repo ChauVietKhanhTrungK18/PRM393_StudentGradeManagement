@@ -73,8 +73,9 @@ builder.Services.AddScoped<IFGReader, FGReader>();
 builder.Services.AddScoped<ISubjectService, SubjectService>();
 builder.Services.AddScoped<IExcelService, ExcelService>();
 builder.Services.AddScoped<IExcelRepository,ExcelRepository>();
-
+builder.Services.AddScoped<IFGExportService, FGExportService>();
 builder.Services.AddScoped<IExcelReader, ExcelReader>();
+builder.Services.AddScoped<IFGExportRepository, FGExportRepository>();
 var app = builder.Build();
 
 app.UseCors("AllowAll");
