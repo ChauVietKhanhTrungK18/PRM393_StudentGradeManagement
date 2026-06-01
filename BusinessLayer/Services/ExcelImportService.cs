@@ -337,6 +337,238 @@ namespace BusinessLayer.Services
             }
         }
 
+        public async Task<ExcelSyncResultDto> SyncAllSheetsAsync(
+            ExcelSyncRequestDto request,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(request.FilePath))
+                throw new InvalidOperationException("filePath is required.");
+
+            var physicalPath = ResolveUploadedFile(request.FilePath);
+            var workbook =
+                await _reader.GetWorkbookInfoAsync(physicalPath, cancellationToken)
+                    .ConfigureAwait(false);
+
+            var subjectClasses =
+                await _dbContext.SubjectClasses
+                    .Include(sc => sc.Students)
+                    .ThenInclude(s => s.Marks)
+                    .Include(sc => sc.GradingComponents)
+                    .ToListAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+            var sheetResults = new List<ExcelSheetSyncResultDto>();
+            var importedSheets = 0;
+            var skippedSheets = 0;
+
+            foreach (var sheet in workbook.Sheets)
+            {
+                var sheetResult =
+                    await SyncSingleSheetAsync(
+                            request.FilePath,
+                            sheet,
+                            subjectClasses,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+
+                sheetResults.Add(sheetResult);
+
+                if (sheetResult.Status == "imported")
+                    importedSheets++;
+                else if (sheetResult.Status == "skipped")
+                    skippedSheets++;
+            }
+
+            return new ExcelSyncResultDto
+            {
+                FilePath = request.FilePath,
+                Success = importedSheets > 0,
+                TotalSheets = workbook.Sheets.Count,
+                ImportedSheets = importedSheets,
+                SkippedSheets = skippedSheets,
+                Sheets = sheetResults
+            };
+        }
+
+        public async Task<ExcelSyncResultDto> UploadAndSyncAsync(
+            IFormFile file,
+            CancellationToken cancellationToken = default)
+        {
+            var upload = await UploadAsync(file, cancellationToken).ConfigureAwait(false);
+
+            return await SyncAllSheetsAsync(
+                    new ExcelSyncRequestDto { FilePath = upload.FilePath },
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        private async Task<ExcelSheetSyncResultDto> SyncSingleSheetAsync(
+            string filePath,
+            ExcelSheetInfo sheet,
+            List<SubjectClass> subjectClasses,
+            CancellationToken cancellationToken)
+        {
+            var result = new ExcelSheetSyncResultDto
+            {
+                SheetName = sheet.Name
+            };
+
+            if (sheet.Headers.Count == 0)
+            {
+                result.Status = "skipped";
+                result.Message = "Sheet has no header row.";
+                return result;
+            }
+
+            var subjectClass = ExcelWorksheetNaming.MatchSheet(sheet.Name, subjectClasses);
+            if (subjectClass == null)
+            {
+                result.Status = "skipped";
+                result.Message = "No matching subject/class in database for this sheet name.";
+                return result;
+            }
+
+            result.SubjectCode = subjectClass.SubjectCode;
+            result.ClassName = subjectClass.ClassName;
+
+            ExcelColumnMappingDto columnMapping;
+            try
+            {
+                columnMapping = ExcelAutoMappingBuilder.Build(
+                    sheet.Headers,
+                    subjectClass.GradingComponents.Select(c => c.Name));
+            }
+            catch (Exception ex)
+            {
+                result.Status = "skipped";
+                result.Message = ex.Message;
+                return result;
+            }
+
+            var rows =
+                await ReadMappedRowsAsync(
+                        filePath,
+                        sheet.Name,
+                        columnMapping,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+            var studentsByRoll = subjectClass.Students
+                .ToDictionary(s => s.RollNumber, StringComparer.OrdinalIgnoreCase);
+
+            var componentsByName = subjectClass.GradingComponents
+                .ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
+
+            var notFoundRolls = new List<string>();
+            var changedMarks = 0;
+            var marksToApply = new List<(Student Student, GradingComponent Component, decimal NewValue)>();
+
+            foreach (var parsed in rows.ParsedRows)
+            {
+                if (!studentsByRoll.TryGetValue(parsed.RollNumber, out var student))
+                {
+                    if (!notFoundRolls.Contains(parsed.RollNumber, StringComparer.OrdinalIgnoreCase))
+                        notFoundRolls.Add(parsed.RollNumber);
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(parsed.FullName))
+                    student.FullName = parsed.FullName.Trim();
+
+                if (!string.IsNullOrWhiteSpace(parsed.Comment))
+                    student.Comment = parsed.Comment.Trim();
+
+                foreach (var markMapping in columnMapping.Marks)
+                {
+                    var componentName = markMapping.ComponentName.Trim();
+                    if (!componentsByName.TryGetValue(componentName, out var component))
+                        continue;
+
+                    if (!parsed.Marks.TryGetValue(componentName, out var newValue))
+                        continue;
+
+                    var existingMark = student.Marks
+                        .FirstOrDefault(m => m.ComponentId == component.Id);
+
+                    var currentValue = existingMark?.Value;
+                    if (currentValue == newValue)
+                        continue;
+
+                    changedMarks++;
+                    marksToApply.Add((student, component, newValue));
+                }
+            }
+
+            result.NotFoundRolls = notFoundRolls;
+            result.ChangedMarksPreview = changedMarks;
+
+            if (changedMarks == 0)
+            {
+                result.Status = "no_changes";
+                result.Message = "Excel grades match the database (no updates needed).";
+                return result;
+            }
+
+            var updatedStudents = new HashSet<int>();
+            var updatedMarks = 0;
+
+            foreach (var (student, component, newValue) in marksToApply)
+            {
+                var existingMark = student.Marks
+                    .FirstOrDefault(m => m.ComponentId == component.Id);
+
+                if (existingMark == null)
+                {
+                    var mark = new Mark
+                    {
+                        StudentId = student.Id,
+                        ComponentId = component.Id,
+                        Value = newValue
+                    };
+
+                    _dbContext.Marks.Add(mark);
+                    student.Marks.Add(mark);
+
+                    _dbContext.AuditLogs.Add(new AuditLog
+                    {
+                        StudentId = student.Id,
+                        ComponentId = component.Id,
+                        OldValue = null,
+                        NewValue = newValue,
+                        ChangedBy = "excel-sync",
+                        ChangedAt = DateTimeOffset.UtcNow
+                    });
+                }
+                else
+                {
+                    var oldValue = existingMark.Value;
+                    existingMark.Value = newValue;
+
+                    _dbContext.AuditLogs.Add(new AuditLog
+                    {
+                        StudentId = student.Id,
+                        ComponentId = component.Id,
+                        OldValue = oldValue,
+                        NewValue = newValue,
+                        ChangedBy = "excel-sync",
+                        ChangedAt = DateTimeOffset.UtcNow
+                    });
+                }
+
+                updatedStudents.Add(student.Id);
+                updatedMarks++;
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            result.Status = "imported";
+            result.Message = $"Updated {updatedMarks} mark(s) for {updatedStudents.Count} student(s).";
+            result.UpdatedStudents = updatedStudents.Count;
+            result.UpdatedMarks = updatedMarks;
+
+            return result;
+        }
+
         private async Task<SheetParseResult> ReadMappedRowsAsync(
             string filePath,
             string sheetName,

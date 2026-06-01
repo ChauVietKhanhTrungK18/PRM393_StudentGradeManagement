@@ -16,5 +16,19 @@ namespace BusinessLayer.IService
         Task<ExcelImportResultDto> ImportAsync(
             ExcelImportRequestDto request,
             CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Auto-sync all sheets: match sheet name to subject class, map columns, import changed marks.
+        /// </summary>
+        Task<ExcelSyncResultDto> SyncAllSheetsAsync(
+            ExcelSyncRequestDto request,
+            CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Upload file then sync all sheets in one call.
+        /// </summary>
+        Task<ExcelSyncResultDto> UploadAndSyncAsync(
+            IFormFile file,
+            CancellationToken cancellationToken = default);
     }
 }
