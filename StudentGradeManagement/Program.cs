@@ -63,6 +63,7 @@ builder.Services.AddScoped<BusinessLayer.Mapping.FGMapper>();
 builder.Services.AddScoped<IFGImportService,FGImportService>();
 builder.Services.AddScoped<IFGReader, FGReader>();
 builder.Services.AddScoped<ISubjectService, SubjectService>();
+builder.Services.AddScoped<IMarkService, MarkService>();
 var app = builder.Build();
 
 app.UseCors("AllowAll");
