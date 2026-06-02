@@ -62,6 +62,7 @@ namespace StudentGradeManagement.Controllers
                     SubjectCode = subjectCode,
                     ClassName = className,
                     RollNumber = rollNumber,
+                    Comment = request.Comment,
                     Marks = NormalizeMarks(request.Marks)
                 },
                 cancellationToken);

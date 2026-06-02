@@ -376,6 +376,19 @@ namespace BusinessLayer.Services
 
             try
             {
+                if (request.Comment != null)
+                {
+                    var studentEntity = await _dbContext.Students
+                        .FirstOrDefaultAsync(
+                            s => s.Id == student.Id,
+                            cancellationToken);
+
+                    if (studentEntity != null)
+                    {
+                        studentEntity.Comment = request.Comment;
+                    }
+                }
+
                 var existingMarks = await _dbContext.Marks
                     .Where(m => m.StudentId == student.Id && componentIds.Contains(m.ComponentId))
                     .ToListAsync(cancellationToken);

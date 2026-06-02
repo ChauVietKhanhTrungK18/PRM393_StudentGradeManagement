@@ -10,6 +10,8 @@ namespace BusinessLayer.DTOs
 
         public string RollNumber { get; set; } = string.Empty;
 
+        public string? Comment { get; set; }
+
         public Dictionary<string, string?> Marks { get; set; } = new();
     }
 }
