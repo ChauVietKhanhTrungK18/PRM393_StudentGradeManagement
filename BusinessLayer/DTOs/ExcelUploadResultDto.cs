@@ -1,7 +1,9 @@
 namespace BusinessLayer.DTOs
 {
-    public class ExcelReadResultDto
+    public class ExcelUploadResultDto
     {
+        public string FilePath { get; set; } = string.Empty;
+
         public List<ExcelSheetInfoDto> Sheets { get; set; } = new();
     }
 

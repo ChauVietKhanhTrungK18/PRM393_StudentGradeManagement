@@ -1,9 +1,28 @@
 using ClosedXML.Excel;
+using System.Globalization;
 
 namespace DataAccessLayer.FileHandlers.Excel
 {
     public class ExcelReader : IExcelReader
     {
+        /// <summary>
+        /// Numeric grade cells must not use GetString() alone — it often returns empty for numbers.
+        /// </summary>
+        private static string ReadCellAsText(IXLCell cell)
+        {
+            if (cell.IsEmpty())
+                return string.Empty;
+
+            return cell.DataType switch
+            {
+                XLDataType.Number =>
+                    cell.GetDouble().ToString(CultureInfo.InvariantCulture),
+                XLDataType.Boolean => cell.GetBoolean().ToString(),
+                XLDataType.DateTime =>
+                    cell.GetDateTime().ToString(CultureInfo.InvariantCulture),
+                _ => cell.GetFormattedString().Trim()
+            };
+        }
         public Task<ExcelWorkbookInfo> GetWorkbookInfoAsync(
             string filePath,
             CancellationToken cancellationToken = default)
@@ -34,7 +53,7 @@ namespace DataAccessLayer.FileHandlers.Excel
 
                 foreach (var cell in headerRow.CellsUsed())
                 {
-                    var header = cell.GetString().Trim();
+                    var header = ReadCellAsText(cell);
                     if (!string.IsNullOrEmpty(header))
                     {
                         sheetInfo.Headers.Add(header);
@@ -73,7 +92,7 @@ namespace DataAccessLayer.FileHandlers.Excel
             var headerIndex = new Dictionary<int, string>();
             foreach (var cell in headerRow.CellsUsed())
             {
-                var header = cell.GetString().Trim();
+                var header = ReadCellAsText(cell);
                 if (!string.IsNullOrEmpty(header))
                 {
                     headerIndex[cell.Address.ColumnNumber] = header;
@@ -98,7 +117,7 @@ namespace DataAccessLayer.FileHandlers.Excel
                 var hasValue = false;
                 foreach (var (columnNumber, header) in headerIndex)
                 {
-                    var cellValue = row.Cell(columnNumber).GetString().Trim();
+                    var cellValue = ReadCellAsText(row.Cell(columnNumber));
                     rowData.Values[header] = cellValue;
 
                     if (!string.IsNullOrEmpty(cellValue))

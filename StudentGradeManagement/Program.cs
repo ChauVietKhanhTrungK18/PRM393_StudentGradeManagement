@@ -3,6 +3,7 @@ using BusinessLayer.Services;
 using DataAccessLayer.DbContexts;
 using DataAccessLayer.FileHandlers.Excel;
 using DataAccessLayer.FileHandlers.FG;
+using DataAccessLayer.FileHandlers.Excel;
 using DataAccessLayer.IRepository;
 using DataAccessLayer.Repository;
 using Microsoft.EntityFrameworkCore;
@@ -72,6 +73,13 @@ builder.Services.AddScoped<IExcelImportService, ExcelImportService>();
 builder.Services.AddScoped<IFGReader, FGReader>();
 builder.Services.AddScoped<ISubjectService, SubjectService>();
 builder.Services.AddScoped<IExcelService, ExcelService>();
+builder.Services.AddScoped<IExcelRepository, ExcelRepository>();
+builder.Services.AddScoped<IExcelImportRepository, ExcelImportRepository>();
+builder.Services.AddScoped<IExcelReader, ExcelReader>();
+builder.Services.AddSingleton<IExcelUploadStore>(sp =>
+    new ExcelUploadStore(
+        sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath));
+
 builder.Services.AddScoped<IExcelRepository,ExcelRepository>();
 builder.Services.AddScoped<IFGExportService, FGExportService>();
 builder.Services.AddScoped<IExcelReader, ExcelReader>();
