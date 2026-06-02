@@ -80,6 +80,10 @@ builder.Services.AddSingleton<IExcelUploadStore>(sp =>
     new ExcelUploadStore(
         sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath));
 
+builder.Services.AddScoped<IExcelRepository,ExcelRepository>();
+builder.Services.AddScoped<IFGExportService, FGExportService>();
+builder.Services.AddScoped<IExcelReader, ExcelReader>();
+builder.Services.AddScoped<IFGExportRepository, FGExportRepository>();
 var app = builder.Build();
 
 app.UseCors("AllowAll");
