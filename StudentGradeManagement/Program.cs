@@ -1,9 +1,9 @@
+using BusinessLayer.DTOs;
 using BusinessLayer.IService;
 using BusinessLayer.Services;
 using DataAccessLayer.DbContexts;
 using DataAccessLayer.FileHandlers.Excel;
 using DataAccessLayer.FileHandlers.FG;
-using DataAccessLayer.FileHandlers.Excel;
 using DataAccessLayer.IRepository;
 using DataAccessLayer.Repository;
 using Microsoft.EntityFrameworkCore;
@@ -81,11 +81,31 @@ builder.Services.AddSingleton<IExcelUploadStore>(sp =>
     new ExcelUploadStore(
         sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath));
 
-builder.Services.AddScoped<IExcelRepository,ExcelRepository>();
 builder.Services.AddScoped<IFGExportService, FGExportService>();
-builder.Services.AddScoped<IExcelReader, ExcelReader>();
 builder.Services.AddScoped<IFGExportRepository, FGExportRepository>();
 
+// AI Service
+builder.Services.AddHttpClient("ClaudeAI", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(
+        builder.Configuration.GetValue<int>("AI:TimeoutSeconds", 30));
+});
+builder.Services.AddScoped<IAIService>(sp =>
+{
+    var factory = sp.GetRequiredService<IHttpClientFactory>();
+    var http = factory.CreateClient("ClaudeAI");
+    var db = sp.GetRequiredService<DataAccessLayer.DbContexts.AppDbContext>();
+    var config = sp.GetRequiredService<IConfiguration>();
+    var options = new AIOptions
+    {
+        BaseUrl = config["AI:BaseUrl"] ?? "https://api.anthropic.com",
+        ApiKey = config["AI:ApiKey"] ?? string.Empty,
+        Model = config["AI:Model"] ?? "claude-haiku-4-5-20251001",
+        MaxTokens = config.GetValue<int>("AI:MaxTokens", 1024),
+        TimeoutSeconds = config.GetValue<int>("AI:TimeoutSeconds", 30)
+    };
+    return new AIService(http, db, options);
+});
 var app = builder.Build();
 
 app.UseCors("AllowAll");
