@@ -114,19 +114,19 @@ namespace BusinessLayer.Services
                 return new MarkUpdateResultDto
                 {
                     Success = true,
-                    IsValid = false,
+                    IsValid = false, 
                     Message = "Score must be >= 0.",
                     Value = value
                 };
             }
 
-            if (value > 10 && value != null)
+            if (component.MaxMark > 0m && value > component.MaxMark)
             {
                 return new MarkUpdateResultDto
                 {
                     Success = true,
                     IsValid = false,
-                    Message = $"Score must be <= 10.",
+                    Message = $"Score must be <= {component.MaxMark}.",
                     Value = value
                 };
             }
@@ -279,6 +279,54 @@ namespace BusinessLayer.Services
 
             if (requestNames.Count == 0)
             {
+                if (request.Comment == null || !string.IsNullOrWhiteSpace(request.Comment))
+                {
+                    await using var commentTx = await _dbContext.Database
+                        .BeginTransactionAsync(cancellationToken)
+                        .ConfigureAwait(false);
+
+                    try
+                    {
+                        var studentEntity = await _dbContext.Students
+                            .FirstOrDefaultAsync(
+                                s => s.Id == student.Id,
+                                cancellationToken);
+
+                        if (studentEntity != null)
+                        {
+                            if (request.Comment == null)
+                            {
+                                studentEntity.Comment = null;
+                            }
+                            else if (!string.IsNullOrWhiteSpace(request.Comment))
+                            {
+                                studentEntity.Comment = request.Comment;
+                            }
+                        }
+
+                        await _dbContext.SaveChangesAsync(cancellationToken)
+                            .ConfigureAwait(false);
+
+                        await commentTx.CommitAsync(cancellationToken)
+                            .ConfigureAwait(false);
+
+                        return new MarkBulkUpdateResultDto
+                        {
+                            Success = true,
+                            IsValid = true,
+                            Message = "OK",
+                            Results = new Dictionary<string, MarkCellResultDto>()
+                        };
+                    }
+                    catch
+                    {
+                        await commentTx.RollbackAsync(cancellationToken)
+                            .ConfigureAwait(false);
+
+                        throw;
+                    }
+                }
+
                 return new MarkBulkUpdateResultDto
                 {
                     Success = false,
@@ -322,12 +370,12 @@ namespace BusinessLayer.Services
                     continue;
                 }
 
-                if (value != null && value > 10)
+                if (component.MaxMark > 0m && value > component.MaxMark)
                 {
                     results[component.Name] = new MarkCellResultDto
                     {
                         IsValid = false,
-                        Message = $"Score must be <= 10.",
+                        Message = $"Score must be <= {component.MaxMark}.",
                         Value = value
                     };
                     allValid = false;
@@ -376,14 +424,18 @@ namespace BusinessLayer.Services
 
             try
             {
-                if (request.Comment != null)
-                {
-                    var studentEntity = await _dbContext.Students
-                        .FirstOrDefaultAsync(
-                            s => s.Id == student.Id,
-                            cancellationToken);
+                var studentEntity = await _dbContext.Students
+                    .FirstOrDefaultAsync(
+                        s => s.Id == student.Id,
+                        cancellationToken);
 
-                    if (studentEntity != null)
+                if (studentEntity != null)
+                {
+                    if (request.Comment == null)
+                    {
+                        studentEntity.Comment = null;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(request.Comment))
                     {
                         studentEntity.Comment = request.Comment;
                     }

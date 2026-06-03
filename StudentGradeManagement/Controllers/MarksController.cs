@@ -131,9 +131,14 @@ namespace StudentGradeManagement.Controllers
         }
 
         private static Dictionary<string, string?> NormalizeMarks(
-            Dictionary<string, JsonElement> marks)
+            Dictionary<string, JsonElement>? marks)
         {
             var result = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+            if (marks == null)
+            {
+                return result;
+            }
 
             foreach (var kvp in marks)
             {
