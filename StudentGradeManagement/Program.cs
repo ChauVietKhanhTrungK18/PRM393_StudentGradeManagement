@@ -1,9 +1,14 @@
 using BusinessLayer.IService;
 using BusinessLayer.Services;
 using DataAccessLayer.DbContexts;
+using DataAccessLayer.FileHandlers.Excel;
 using DataAccessLayer.FileHandlers.FG;
+using DataAccessLayer.FileHandlers.Excel;
+using DataAccessLayer.IRepository;
+using DataAccessLayer.Repository;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
+using OfficeOpenXml;
 using System.Reflection;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -59,11 +64,28 @@ builder.Services.AddSwaggerGen(option =>
         }
     });
 });
+ExcelPackage.License.SetNonCommercialPersonal("StudentGradeManagement");
+
 builder.Services.AddScoped<BusinessLayer.Mapping.FGMapper>();
+builder.Services.AddScoped<BusinessLayer.Mapping.ExcelMapper>();
 builder.Services.AddScoped<IFGImportService,FGImportService>();
+builder.Services.AddScoped<IExcelImportService, ExcelImportService>();
 builder.Services.AddScoped<IFGReader, FGReader>();
 builder.Services.AddScoped<ISubjectService, SubjectService>();
-builder.Services.AddScoped<IMarkService, MarkService>();
+
+builder.Services.AddScoped<IExcelService, ExcelService>();
+builder.Services.AddScoped<IExcelRepository, ExcelRepository>();
+builder.Services.AddScoped<IExcelImportRepository, ExcelImportRepository>();
+builder.Services.AddScoped<IExcelReader, ExcelReader>();
+builder.Services.AddSingleton<IExcelUploadStore>(sp =>
+    new ExcelUploadStore(
+        sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath));
+
+builder.Services.AddScoped<IExcelRepository,ExcelRepository>();
+builder.Services.AddScoped<IFGExportService, FGExportService>();
+builder.Services.AddScoped<IExcelReader, ExcelReader>();
+builder.Services.AddScoped<IFGExportRepository, FGExportRepository>();
+
 var app = builder.Build();
 
 app.UseCors("AllowAll");
