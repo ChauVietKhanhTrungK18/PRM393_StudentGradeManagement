@@ -1,0 +1,13 @@
+namespace BusinessLayer.DTOs
+{
+    public class MarkUpdateResultDto
+    {
+        public bool Success { get; set; }
+
+        public bool IsValid { get; set; }
+
+        public string Message { get; set; } = string.Empty;
+
+        public decimal Value { get; set; }
+    }
+}
