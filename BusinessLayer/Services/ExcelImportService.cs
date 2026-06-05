@@ -309,16 +309,20 @@ namespace BusinessLayer.Services
                 await tx.CommitAsync(cancellationToken)
                     .ConfigureAwait(false);
 
-                if (importedCount == 0 && errors.Count == 0)
+                if (rows.ParsedRows.Count == 0 && errors.Count == 0)
                 {
-                    errors.Add(
-                        "No grades were updated. Check columnMapping.marks (excelColumn must match headers), " +
-                        "re-upload the file after editing Excel, and ensure overwrite=true.");
+                    errors.Add("Không đọc được dòng điểm hợp lệ trong trang tính đã chọn.");
+                }
+                else if (rows.ParsedRows.Count > 0 &&
+                    notFoundRolls.Count == rows.ParsedRows.Count &&
+                    errors.Count == 0)
+                {
+                    errors.Add("Không tìm thấy sinh viên nào trong lớp khớp với cột Roll/MSSV của Excel.");
                 }
 
                 return new ExcelImportResultDto
                 {
-                    Success = importedCount > 0 || errors.Count == 0,
+                    Success = errors.Count == 0,
                     ImportedCount = importedCount,
                     SkippedCount = skippedCount,
                     NotFoundRolls = notFoundRolls,

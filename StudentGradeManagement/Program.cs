@@ -72,6 +72,7 @@ builder.Services.AddScoped<IFGImportService,FGImportService>();
 builder.Services.AddScoped<IExcelImportService, ExcelImportService>();
 builder.Services.AddScoped<IFGReader, FGReader>();
 builder.Services.AddScoped<ISubjectService, SubjectService>();
+builder.Services.AddScoped<IMarkService, MarkService>();
 
 builder.Services.AddScoped<IExcelService, ExcelService>();
 builder.Services.AddScoped<IExcelRepository, ExcelRepository>();
@@ -87,8 +88,10 @@ builder.Services.AddScoped<IFGExportRepository, FGExportRepository>();
 // AI Service
 builder.Services.AddHttpClient("ClaudeAI", client =>
 {
-    client.Timeout = TimeSpan.FromSeconds(
-        builder.Configuration.GetValue<int>("AI:TimeoutSeconds", 30));
+    var timeoutSeconds = builder.Configuration.GetValue<int>("AI:TimeoutSeconds", 600);
+    client.Timeout = timeoutSeconds <= 0
+        ? Timeout.InfiniteTimeSpan
+        : TimeSpan.FromSeconds(timeoutSeconds);
 });
 builder.Services.AddScoped<IAIService>(sp =>
 {
@@ -102,7 +105,7 @@ builder.Services.AddScoped<IAIService>(sp =>
         ApiKey = config["AI:ApiKey"] ?? string.Empty,
         Model = config["AI:Model"] ?? "claude-haiku-4-5-20251001",
         MaxTokens = config.GetValue<int>("AI:MaxTokens", 1024),
-        TimeoutSeconds = config.GetValue<int>("AI:TimeoutSeconds", 30)
+        TimeoutSeconds = config.GetValue<int>("AI:TimeoutSeconds", 600)
     };
     return new AIService(http, db, options);
 });

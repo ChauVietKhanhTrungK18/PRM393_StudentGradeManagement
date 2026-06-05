@@ -13,6 +13,8 @@ namespace BusinessLayer.Services
 {
     public class AIService : IAIService
     {
+        private const string AiUnavailableMarker = "__AI_UNAVAILABLE__:";
+
         private readonly HttpClient _http;
         private readonly AppDbContext _db;
         private readonly AIOptions _options;
@@ -51,7 +53,8 @@ namespace BusinessLayer.Services
             try
             {
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                cts.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
+                if (_options.TimeoutSeconds > 0)
+                    cts.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
                 response = await _http.SendAsync(request, cts.Token);
             }
             catch (OperationCanceledException)
@@ -59,15 +62,23 @@ namespace BusinessLayer.Services
                 return "Yêu cầu AI hết thời gian. Vui lòng thử lại.";
             }
 
+            catch (HttpRequestException)
+            {
+                return $"{AiUnavailableMarker}Không kết nối được dịch vụ AI tại {_options.BaseUrl}. Hãy khởi động LM Studio hoặc kiểm tra cấu hình AI:BaseUrl.";
+            }
+
             var json = await response.Content.ReadAsStringAsync(ct);
             if (!response.IsSuccessStatusCode)
-                return $"Lỗi Claude API ({(int)response.StatusCode}): {json}";
+                return $"{AiUnavailableMarker}Dịch vụ AI trả về lỗi {(int)response.StatusCode}: {json}";
 
             var node = JsonNode.Parse(json);
             return node?["content"]?[0]?["text"]?.GetValue<string>() ?? string.Empty;
         }
 
         // ─── Data Loading ─────────────────────────────────────────────────────
+
+        private static bool IsAiUnavailable(string text) =>
+            text.StartsWith(AiUnavailableMarker, StringComparison.Ordinal);
 
         private async Task<SubjectClass?> LoadAsync(string subjectCode, string className, CancellationToken ct)
         {
@@ -119,6 +130,81 @@ namespace BusinessLayer.Services
         };
 
         // ─── Prompt Builder ───────────────────────────────────────────────────
+
+        private static string BuildOfflineChatAnswer(
+            SubjectClass sc,
+            string question,
+            int passCount,
+            int failCount,
+            double avgScore)
+        {
+            var total = sc.Students.Count;
+            var passRate = total > 0 ? passCount * 100.0 / total : 0;
+            return $"""
+                Dịch vụ AI chưa kết nối, nên hệ thống đang trả lời bằng thống kê nội bộ.
+
+                Lớp {sc.SubjectCode}/{sc.ClassName} có {total} sinh viên. Điểm trung bình tổng kết hiện là {avgScore:F2}; {passCount} sinh viên đạt ({passRate:F1}%) và {failCount} sinh viên chưa đạt. Nếu cần hỏi chi tiết theo từng sinh viên hoặc từng thành phần điểm, hãy khởi động dịch vụ AI rồi thử lại.
+
+                Câu hỏi đã nhận: {question}
+                """;
+        }
+
+        private static List<string> BuildOfflineInsights(
+            int totalStudents,
+            int passCount,
+            int failCount,
+            double avgScore,
+            List<ComponentStatDto> componentStats)
+        {
+            var insights = new List<string>
+            {
+                "Dịch vụ AI chưa kết nối, các nhận xét dưới đây được tạo từ thống kê nội bộ.",
+                $"Lớp có {totalStudents} sinh viên, điểm trung bình tổng kết là {avgScore:F2}.",
+                $"Số sinh viên đạt: {passCount}; chưa đạt: {failCount}."
+            };
+
+            var weakest = componentStats
+                .Where(c => c.Average > 0)
+                .OrderBy(c => c.Average)
+                .FirstOrDefault();
+            if (weakest != null)
+                insights.Add($"Thành phần cần chú ý nhất hiện là {weakest.Name} với điểm trung bình {weakest.Average:F2}.");
+
+            var missing = componentStats
+                .Where(c => c.EmptyCount > 0 || c.ZeroCount > 0)
+                .OrderByDescending(c => c.EmptyCount + c.ZeroCount)
+                .FirstOrDefault();
+            if (missing != null)
+                insights.Add($"{missing.Name} còn {missing.EmptyCount} ô trống và {missing.ZeroCount} điểm 0, nên kiểm tra trước khi xuất tệp.");
+
+            return insights.Take(5).ToList();
+        }
+
+        private static AISuggestCommentDto BuildOfflineCommentSuggestion(
+            Student student,
+            IReadOnlyList<GradingComponent> components)
+        {
+            var total = ComputeTotal(student, components);
+            var comment = total switch
+            {
+                >= 8.0m => "Kết quả tốt, tiếp tục duy trì phong độ.",
+                >= 6.5m => "Kết quả khá, nên củng cố thêm các phần còn yếu.",
+                >= 5.0m => "Đạt yêu cầu, cần luyện tập thêm để cải thiện điểm.",
+                < 5.0m => "Cần cố gắng hơn và ôn lại các kiến thức trọng tâm.",
+                _ => "Chưa đủ dữ liệu điểm, cần cập nhật thêm để nhận xét chính xác."
+            };
+            var confidence = total.HasValue
+                ? (total.Value >= 7.0m ? "HIGH" : total.Value >= 5.0m ? "MEDIUM" : "LOW")
+                : "LOW";
+
+            return new AISuggestCommentDto
+            {
+                RollNumber = student.RollNumber,
+                FullName = student.FullName,
+                SuggestedComment = comment,
+                Confidence = confidence
+            };
+        }
 
         private static string BuildClassSummary(SubjectClass sc)
         {
@@ -260,6 +346,8 @@ namespace BusinessLayer.Services
                 """;
 
             var answer = await CallClaudeAsync(prompt, ct);
+            if (IsAiUnavailable(answer))
+                answer = BuildOfflineChatAnswer(sc, request.Question, passCount, failCount, avgScore);
 
             return new AIChatResponseDto
             {
@@ -337,12 +425,14 @@ namespace BusinessLayer.Services
                 """;
 
             var rawInsights = await CallClaudeAsync(insightPrompt, ct);
-            var insights = rawInsights
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Select(l => l.TrimStart('-', ' ').Trim())
-                .Where(l => !string.IsNullOrWhiteSpace(l))
-                .Take(5)
-                .ToList();
+            var insights = IsAiUnavailable(rawInsights)
+                ? BuildOfflineInsights(students.Count, passCount, failCount, avgScore, compStats)
+                : rawInsights
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(l => l.TrimStart('-', ' ').Trim())
+                    .Where(l => !string.IsNullOrWhiteSpace(l))
+                    .Take(5)
+                    .ToList();
 
             return new AIStatisticsResponseDto
             {
@@ -560,6 +650,15 @@ namespace BusinessLayer.Services
                 """;
 
             var raw = await CallClaudeAsync(prompt, ct);
+            if (IsAiUnavailable(raw))
+            {
+                return new AISuggestCommentsResponseDto
+                {
+                    Suggestions = students
+                        .Select(s => BuildOfflineCommentSuggestion(s, comps))
+                        .ToList()
+                };
+            }
 
             var suggestions = new List<AISuggestCommentDto>();
             foreach (var line in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries))
